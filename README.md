@@ -1,53 +1,51 @@
-# Giao Dịch Chênh Lệch Funding Rate Đa Sàn (Cross-Venue Funding Dispersion)
+# Cross-Venue Funding Rate Dispersion Strategy & Research
 
-Gói mã nguồn và tài liệu nghiên cứu định lượng độc lập về chiến lược **Giao dịch chênh lệch Funding Rate giữa các sàn phái sinh (Bybit, OKX, Hyperliquid)**.
-
-> **Lưu ý quy chuẩn:** Gói này được trích xuất hoàn toàn độc lập, **KHÔNG chứa hệ thống kiểm định 7-gate (7gate)** và **KHÔNG chứa các thuật toán giao dịch khác** (như Fibonacci, SMC, Breakout, Trend Following,...).
+Independent quantitative research package and strategy engine for capturing delta-neutral funding rate dispersion across cryptocurrency perpetual swap venues (Bybit, OKX, Hyperliquid).
 
 ---
 
-## 1. Cấu Trúc Thư Mục
+## 1. Directory Structure
 
 ```text
-C:\cross_venue_funding_dispersion\
+cross-venue-funding-dispersion/
 │
-├── README.md                                    # Hướng dẫn tổng quan & khởi chạy
-├── requirements.txt                             # Danh sách thư viện Python cần thiết
-├── run_backtest.py                              # CLI runner độc lập để chạy backtest
+├── README.md                                    # Project overview and execution guide
+├── requirements.txt                             # Python dependencies (numpy, pandas, pyarrow, pytest)
+├── run_backtest.py                              # Standalone CLI runner for backtesting
 │
-├── docs/                                        # Toàn bộ tài liệu nghiên cứu gốc
-│   ├── CROSS_VENUE_FUNDING_DISPERSION_SYNTHESIS_VI.md # Báo cáo tổng hợp kết quả (Tiếng Việt)
-│   ├── CROSS_VENUE_FUNDING_DISPERSION_SPEC.md         # Quy chuẩn kỹ thuật chi tiết
-│   ├── CROSS_VENUE_FUNDING_DISPERSION_RESULTS.md      # Báo cáo chi tiết theo từng fold/cặp tiền
-│   ├── STRATEGY_GUIDE.md                              # Phân tích cơ chế & lý do cần vốn lớn
-│   └── DATA_SCHEMA.md                                 # Đặc tả dữ liệu funding rate đa sàn
+├── docs/                                        # Comprehensive research documentation
+│   ├── CROSS_VENUE_FUNDING_DISPERSION_SYNTHESIS.md # Synthesis report of empirical findings
+│   ├── CROSS_VENUE_FUNDING_DISPERSION_SPEC.md      # Frozen point-in-time specification
+│   ├── CROSS_VENUE_FUNDING_DISPERSION_RESULTS.md   # Out-of-sample results by fold and symbol
+│   ├── STRATEGY_GUIDE.md                           # Mathematical mechanics & capital requirements
+│   └── DATA_SCHEMA.md                              # Multi-venue funding rate schema
 │
-├── src/                                         # Mã nguồn thuật toán thuần túy
+├── src/                                         # Core strategy and execution engine
 │   ├── __init__.py
-│   ├── config.py                                # Cấu hình sàn, cặp tiền, chi phí, mốc thời gian
-│   ├── models.py                                # Cấu trúc dữ liệu (VenueSeries, Candidate, PairTarget)
-│   ├── data_loader.py                           # Module nạp & tiền xử lý Parquet funding rate
-│   ├── signal_engine.py                         # Thuật toán tính trailing funding, ranking & tạo tín hiệu
-│   ├── simulator.py                             # Engine mô phỏng PnL, tính funding payment & phí chuyển vị thế
-│   ├── walk_forward.py                          # Thuật toán Walk-Forward Optimization độc lập
-│   └── analytics.py                             # Tính toán chỉ số PnL, DD, Sharpe, Bootstrap
+│   ├── config.py                                # Venue, symbol, parameter, and cost configuration
+│   ├── models.py                                # Domain models (VenueSeries, Candidate, PairTarget)
+│   ├── data_loader.py                           # Parquet data loading & timestamp normalization
+│   ├── signal_engine.py                         # Trailing rate estimation, ranking & signal generation
+│   ├── simulator.py                             # Causal execution simulator with fee & funding accounting
+│   ├── walk_forward.py                          # Multi-fold walk-forward evaluation engine
+│   └── analytics.py                             # Performance metrics, drawdowns & bootstrap analysis
 │
-├── tests/                                       # Bộ Unit Test kiểm tra tính đúng đắn thuật toán
+├── tests/                                       # Test suite for algorithm correctness
 │   ├── __init__.py
-│   └── test_funding_dispersion.py               # 7 test cases độc lập
+│   └── test_funding_dispersion.py               # Unit tests verifying causality, guards & accounting
 │
-└── data/                                        # Dữ liệu mẫu & Parquet lịch sử
+└── data/                                        # Historical funding rate datasets
     └── datasets/cross_venue_funding/
-        ├── bybit/                               # 11 cặp tiền phái sinh Bybit
-        ├── hyperliquid/                         # 10 cặp tiền phái sinh Hyperliquid
-        └── okx/                                 # 12 cặp tiền phái sinh OKX
+        ├── bybit/                               # Bybit USDT-M perpetual contracts
+        ├── hyperliquid/                         # Hyperliquid native perpetual contracts
+        └── okx/                                 # OKX USDT-M swap contracts
 ```
 
 ---
 
-## 2. Cài Đặt Môi Trường
+## 2. Environment Setup
 
-Yêu cầu Python $\ge 3.10$:
+Requirements: Python $\ge 3.10$.
 
 ```bash
 pip install -r requirements.txt
@@ -55,44 +53,46 @@ pip install -r requirements.txt
 
 ---
 
-## 3. Hướng Dẫn Sử Dụng
+## 3. Usage & Execution
 
-### Chạy backtest trên 1 cặp tiền cụ thể (ví dụ ETHUSDT):
+### Run Backtest on a Single Asset (e.g., ETHUSDT)
 ```bash
-# Chạy với chi phí chuẩn (5 bps / leg):
+# Standard transaction cost model (5 bps per leg):
 python run_backtest.py --symbol ETHUSDT --lookback 14 --threshold 0
 
-# Chạy với chi phí stress 2x (10 bps / leg):
+# Stress transaction cost model (10 bps per leg / 2x cost):
 python run_backtest.py --symbol ETHUSDT --lookback 14 --threshold 0 --stress-cost
 ```
 
-### Chạy kiểm định Walk-Forward toàn bộ danh mục:
+### Run Full Multi-Year Walk-Forward Optimization
 ```bash
 python run_backtest.py --walk-forward
 ```
 
-### Chạy kiểm tra Unit Test:
+### Run Test Suite
 ```bash
 pytest tests/test_funding_dispersion.py -v
 ```
 
 ---
 
-## 4. Tóm Tắt Thuật Toán & Cơ Chế Hoạt Động
+## 4. Strategy & Algorithm Mechanics
 
-1. **Chu kỳ quyết định (Daily Cadence):** Thực hiện tính toán hàng ngày vào lúc `00:00 UTC`, lệnh được kích hoạt vào `01:00 UTC` (trễ 1 giờ).
-2. **Cửa sổ tính toán (Trailing Window):** Đánh giá tổng funding rate trong quá khứ theo các khung $L \in \{1, 3, 7, 14\}$ ngày.
-3. **Lựa chọn chân vị thế (Delta-Neutral Selection):**
-   * **Long:** Sàn có funding rate thấp nhất (hoặc âm sâu nhất).
-   * **Short:** Sàn có funding rate cao nhất.
-4. **Bộ lọc chênh lệch (Spread Threshold):** Chỉ mở vị thế khi mức chênh lệch dự kiến $\ge \text{Threshold}$ ($0, 2, 5\text{ bps/ngày}$).
-5. **Cơ chế phòng hộ mất kết nối (Staleness Guard):** Nếu dữ liệu của một trong hai sàn trễ quá **12 giờ**, hệ thống tự động thoát vị thế về tiền mặt (`DAILY_CASH` / `STALE_EXIT`).
-6. **Mô hình chi phí thực tế:** Phí giao dịch được trừ chính xác theo từng chân thay đổi ($0, 1, 2$ chân mở/đóng/đảo chiều).
+1. **Daily Rebalance Cadence:** Decisions are computed daily at `00:00 UTC` and executed at `01:00 UTC` (1-hour execution delay to prevent lookahead bias).
+2. **Trailing Lookback Window:** Historical funding rates are aggregated over rolling windows $L \in \{1, 3, 7, 14\}$ days for each available venue:
+   $$\text{Rate}_{\text{daily}}(v) = \frac{\sum_{t \in [T - L, T)} \text{funding\_rate}(v, t)}{L}$$
+3. **Delta-Neutral Venue Selection:**
+   * **Long Leg:** Venue with the lowest (or most negative) trailing funding rate.
+   * **Short Leg:** Venue with the highest trailing funding rate.
+4. **Spread Threshold Guard:** Positions are only taken if the expected annualized spread satisfies:
+   $$\text{Spread (bps/day)} = \left(\text{Rate}_{\text{daily}}(v_{\text{short}}) - \text{Rate}_{\text{daily}}(v_{\text{long}})\right) \times 10{,}000 \ge \text{Threshold}$$
+5. **Staleness Guard (Fail-Closed):** If data from any participating venue is older than 12 hours, the engine automatically closes positions to cash (`STALE_EXIT`) to avoid unhedged directional exposure.
+6. **Leg Turnover Accounting:** Transaction fees are accurately charged only on legs that transition (0, 1, or 2 actions per rebalance).
 
 ---
 
-## 5. Kết Luận Nghiên Cứu Định Lượng
+## 5. Empirical Findings & Research Conclusions
 
-* **Lợi nhuận gộp từ Funding Rate:** Thực tế có tồn tại chênh lệch funding rate dương giữa Bybit, OKX và Hyperliquid (tạo ra $+1,460,396\text{ VND}$ gross funding trên các mẫu kiểm định).
-* **Rào cản chi phí:** Tuy nhiên, tần suất đảo vị thế (turnover) tương đối cao khiến chi phí giao dịch nuốt trọn lợi nhuận ở kịch bản Stress 2x (tổng PnL stress âm $-17,617\text{ VND}$).
-* **Rào cản vốn lớn:** Yêu cầu lượng vốn ban đầu rất cao do phải phân mảnh ký quỹ ở 3 sàn độc lập (margin fragmentation), duy trì bộ đệm tiền mặt lớn để phòng ngừa biến động lệch giá (basis divergence) mà không bị thanh lý một bên.
+* **Gross Funding Yield:** Cross-venue funding dispersion generates positive gross funding cashflow across Bybit, OKX, and Hyperliquid ($+1,460,396\text{ VND}$ gross across selected walk-forward paths).
+* **Cost Sensitivity:** High turnover destroys the edge under stress transaction costs ($10\text{ bps/leg}$), resulting in negative aggregate net PnL ($-17,617\text{ VND}$).
+* **Capital Intensity:** The strategy requires significant capital buffers to absorb margin fragmentation across multiple exchanges, prevent liquidation from temporary basis divergence, and make thin daily basis-point yields economically viable after trading fees.
