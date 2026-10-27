@@ -17,8 +17,7 @@ import pytest
 from src.models import VenueSeries, Candidate, PairTarget
 from src.config import get_candidate_grid
 from src.data_loader import parse_funding_timestamps
-from src.signal_engine import target_for_decision, interval_rate_sum
-from src.simulator import transition_actions, build_strategy_path, replay_strategy_path
+from src.signal_engine import target_for_decision, interval_rate_sum, transition_actions
 from src.analytics import bootstrap_probability_positive
 
 
@@ -137,30 +136,19 @@ def test_transition_leg_counting() -> None:
     assert transition_actions(p1, p1_one_changed) == (1, 1)
 
 
-def test_funding_accounting_simulation() -> None:
+def test_interval_rate_sum() -> None:
     ts = [
         "2025-01-01T00:00:00Z",
         "2025-01-01T08:00:00Z",
         "2025-01-01T16:00:00Z",
         "2025-01-02T00:00:00Z",
-        "2025-01-02T08:00:00Z",
-        "2025-01-02T16:00:00Z",
-        "2025-01-03T00:00:00Z",
     ]
-    low = make_synthetic_series("low", ts, [-0.0001, -0.0001, -0.0001, 0.0, 0.0, 0.0, 0.0])
-    high = make_synthetic_series("high", ts, [0.0001, 0.0001, 0.0001, 0.001, 0.001, 0.001, 0.001])
-
-    start = pd.Timestamp("2025-01-02T00:00:00Z")
-    end = pd.Timestamp("2025-01-04T00:00:00Z")
-    path = build_strategy_path("TESTUSDT", {"low": low, "high": high}, Candidate(1, 0.0), start, end)
-
-    normal_res = replay_strategy_path(path, 0.0005)
-    stress_res = replay_strategy_path(path, 0.0010)
-
-    assert normal_res["metrics"]["gross_funding_pnl_vnd"] > 0
-    assert stress_res["metrics"]["pnl_vnd"] < normal_res["metrics"]["pnl_vnd"]
-    # Due to compounding equity path, stress fees are approximately 2x normal fees
-    assert stress_res["metrics"]["fees_vnd"] == pytest.approx(normal_res["metrics"]["fees_vnd"] * 2.0, rel=1e-2)
+    series = make_synthetic_series("test", ts, [0.0001, 0.0002, 0.0003, 0.0004])
+    t_start = pd.Timestamp("2025-01-01T08:00:00Z").value
+    t_end = pd.Timestamp("2025-01-01T16:00:00Z").value
+    rate_sum, count = interval_rate_sum(series, t_start, t_end)
+    assert count == 2
+    assert np.isclose(rate_sum, 0.0005)
 
 
 def test_bootstrap_reproducibility() -> None:

@@ -23,7 +23,7 @@ class VenueSeries:
     rows: int
     first: pd.Timestamp
     last: pd.Timestamp
-    sha256: str
+    sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -48,25 +48,14 @@ class PairTarget:
 
 
 @dataclass(frozen=True)
-class Fold:
-    """Walk-forward train and out-of-sample window definition."""
-
-    name: str
-    train_end: pd.Timestamp
-    oos_start: pd.Timestamp
-    oos_end: pd.Timestamp
-
-
-@dataclass
-class Episode:
-    """Continuous period during which a specific pair of venues is held."""
+class DispersionSignal:
+    """Actionable cross-venue arbitrage signal."""
 
     symbol: str
+    decision_time: pd.Timestamp
     long_venue: str
     short_venue: str
-    start_time: pd.Timestamp
-    end_time: pd.Timestamp
-    duration_hours: float
-    gross_funding_pnl: float
-    fees: float
-    net_pnl: float
+    forecast_spread_bps: float
+    legs_to_close: int = 0
+    legs_to_open: int = 0
+    audit: dict[str, Any] = None

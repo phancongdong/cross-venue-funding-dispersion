@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
 
 from .models import VenueSeries
-from .config import DEFAULT_DATASET_DIR
 
 
 def sha256_file(path: Path) -> str:
@@ -26,7 +25,6 @@ def parse_funding_timestamps(values: Iterable[Any]) -> pd.DatetimeIndex:
     """Parse funding timestamps accurately, handling mixed precision and timezone offsets."""
     parsed = pd.to_datetime(values, utc=True, errors="coerce")
     if parsed.isna().any():
-        # Fallback for ISO strings with microsecond variations
         converted = [
             pd.Timestamp(v).tz_convert("UTC") if pd.Timestamp(v).tzinfo else pd.Timestamp(v, tz="UTC")
             for v in values
@@ -35,47 +33,26 @@ def parse_funding_timestamps(values: Iterable[Any]) -> pd.DatetimeIndex:
     return parsed
 
 
-def load_venue_series(
+def create_venue_series(
     symbol: str,
     venue: str,
-    dataset_dir: Path | None = None
+    timestamps: Iterable[Any],
+    rates: Iterable[float],
 ) -> VenueSeries:
-    """Load and parse historical funding events for a symbol on a specific venue."""
-    base_dir = dataset_dir or DEFAULT_DATASET_DIR
-    path = base_dir / venue / f"{symbol}.parquet"
-    if not path.exists():
-        raise FileNotFoundError(f"Parquet file not found: {path}")
+    """Create a validated VenueSeries directly from in-memory arrays or API responses."""
+    parsed = parse_funding_timestamps(timestamps)
+    rate_arr = np.asarray(list(rates), dtype=float)
 
-    frame = pd.read_parquet(path)
-    required = {
-        "venue",
-        "aitrade_symbol",
-        "venue_symbol",
-        "funding_time_ms",
-        "funding_time_utc",
-        "funding_rate",
-        "source_channel",
-    }
-    missing = required - set(frame.columns)
-    if missing:
-        raise ValueError(f"{path} missing required columns: {sorted(missing)}")
-
-    if frame.empty:
-        raise ValueError(f"{path} has zero rows")
-
-    rates = pd.to_numeric(frame["funding_rate"], errors="coerce")
-    if rates.isna().any():
-        raise ValueError(f"{path} contains non-numeric funding rates")
-
-    timestamps = parse_funding_timestamps(frame["funding_time_utc"])
-    if timestamps.isna().any():
-        raise ValueError(f"{path} contains invalid timestamps")
+    if len(parsed) != len(rate_arr):
+        raise ValueError("timestamps and rates must have identical length")
+    if len(parsed) == 0:
+        raise ValueError("Series cannot be empty")
 
     # Sort strictly by timestamp
-    ordered = pd.DataFrame({"ts": timestamps, "rate": rates.to_numpy(dtype=float)}).sort_values("ts")
+    ordered = pd.DataFrame({"ts": parsed, "rate": rate_arr}).sort_values("ts")
     ts_array = ordered["ts"].to_numpy()
     if len(ts_array) > 1 and np.any(ts_array[1:] <= ts_array[:-1]):
-        raise ValueError(f"{path} contains non-increasing or duplicate timestamps")
+        raise ValueError("contains non-increasing or duplicate timestamps")
 
     parsed_series = pd.DatetimeIndex(ordered["ts"])
     ts_ns = np.asarray([ts.value for ts in parsed_series], dtype=np.int64)
@@ -84,27 +61,36 @@ def load_venue_series(
     return VenueSeries(
         symbol=symbol,
         venue=venue,
-        path=path,
+        path=Path(f"{venue}_{symbol}"),
         timestamps_ns=ts_ns,
         rates=rate_array,
         prefix_rates=np.concatenate(([0.0], np.cumsum(rate_array))),
         rows=len(rate_array),
         first=parsed_series[0],
         last=parsed_series[-1],
-        sha256=sha256_file(path),
+        sha256="",
     )
 
 
-def load_all_venues_for_symbol(
+def load_venue_series(
     symbol: str,
-    venues: Iterable[str],
-    dataset_dir: Path | None = None
-) -> dict[str, VenueSeries]:
-    """Load all available venue series for a symbol."""
-    series_map = {}
-    for venue in venues:
-        try:
-            series_map[venue] = load_venue_series(symbol, venue, dataset_dir)
-        except FileNotFoundError:
-            continue
-    return series_map
+    venue: str,
+    file_path: Path,
+) -> VenueSeries:
+    """Load and parse funding events for a symbol on a specific venue from parquet."""
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Parquet file not found: {path}")
+
+    frame = pd.read_parquet(path)
+    if frame.empty:
+        raise ValueError(f"{path} has zero rows")
+
+    rates = pd.to_numeric(frame["funding_rate"], errors="coerce")
+    if rates.isna().any():
+        raise ValueError(f"{path} contains non-numeric funding rates")
+
+    time_col = "funding_time_utc" if "funding_time_utc" in frame.columns else "timestamp"
+    timestamps = parse_funding_timestamps(frame[time_col])
+
+    return create_venue_series(symbol, venue, timestamps, rates)

@@ -11,6 +11,27 @@ from .models import VenueSeries, Candidate, PairTarget
 from .config import STALE_HOURS
 
 
+def transition_actions(
+    current: PairTarget | None, next_target: PairTarget | None
+) -> tuple[int, int]:
+    """Calculate the number of closed and opened legs between consecutive targets.
+
+    Returns:
+        (closed_legs, opened_legs)
+    """
+    old_legs = (
+        {(current.long_venue, 1), (current.short_venue, -1)}
+        if current is not None
+        else set()
+    )
+    new_legs = (
+        {(next_target.long_venue, 1), (next_target.short_venue, -1)}
+        if next_target is not None
+        else set()
+    )
+    return len(old_legs - new_legs), len(new_legs - old_legs)
+
+
 def interval_rate_sum(series: VenueSeries, start_ns: int, end_ns: int) -> tuple[float, int]:
     """Compute the sum of funding rates and event count in [start_ns, end_ns] using binary search."""
     if series.rows == 0:
@@ -45,17 +66,14 @@ def target_for_decision(
     fresh_metrics: dict[str, dict[str, Any]] = {}
 
     for venue, series in venues.items():
-        # Find latest event strictly before decision
         prior_idx = int(np.searchsorted(series.timestamps_ns, decision_ns, side="left"))
         if prior_idx == 0:
             continue
         latest_event_ns = int(series.timestamps_ns[prior_idx - 1])
         if latest_event_ns < stale_cutoff_ns:
-            continue  # Stale data guard triggered
+            continue
 
-        # Rate sum in lookback window
         rate_sum, count = interval_rate_sum(series, lookback_start_ns, decision_ns - 1)
-        # Convert sum to daily rate
         rate_per_day = rate_sum / float(candidate.lookback_days)
         fresh_metrics[venue] = {
             "rate_per_day": rate_per_day,
@@ -64,7 +82,6 @@ def target_for_decision(
             "latest_event_ns": latest_event_ns,
         }
 
-    # Must have at least 2 fresh venues to establish a cross-venue pair
     if len(fresh_metrics) < 2:
         return None, {
             "reason": "INSUFFICIENT_FRESH_VENUES",
@@ -72,15 +89,10 @@ def target_for_decision(
             "decision_time": decision_time.isoformat(),
         }
 
-    # Sort venues by trailing funding rate
     ranked = sorted(fresh_metrics.items(), key=lambda item: (item[1]["rate_per_day"], item[0]))
     long_venue, long_meta = ranked[0]
     short_venue, short_meta = ranked[-1]
 
-    # Forecast daily dispersion spread in basis points (bps)
-    # Long pays lowest rate (or receives largest negative rate)
-    # Short receives highest rate (or pays lowest negative rate)
-    # Gross expected return = Short rate - Long rate
     forecast_spread_bps = (short_meta["rate_per_day"] - long_meta["rate_per_day"]) * 10_000.0
 
     audit = {
